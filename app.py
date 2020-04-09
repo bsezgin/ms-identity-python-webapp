@@ -4,6 +4,7 @@ import requests
 from flask import Flask, render_template, session, request, redirect, url_for
 from flask_session import Session  # https://pythonhosted.org/Flask-Session
 import msal
+from dotenv import load_dotenv
 #import app_config
 
 
@@ -23,10 +24,10 @@ def login():
     session["state"] = str(uuid.uuid4())
     # Technically we could use empty list [] as scopes to do just sign in,
     # here we choose to also collect end user consent upfront
-    auth_url = _build_auth_url(scopes=os.environ['SCOPE'], state=session["state"])
+    auth_url = _build_auth_url(scopes=os.environ.get('SCOPE'), state=session["state"])
     return render_template("login.html", auth_url=auth_url, version=msal.__version__)
 
-@app.route(os.environ['REDIRECT_PATH'])  # Its absolute URL must match your app's redirect_uri set in AAD
+@app.route(os.environ.get('REDIRECT_PATH'))  # Its absolute URL must match your app's redirect_uri set in AAD
 def authorized():
     if request.args.get('state') != session.get("state"):
         return redirect(url_for("index"))  # No-OP. Goes back to Index page
@@ -36,7 +37,7 @@ def authorized():
         cache = _load_cache()
         result = _build_msal_app(cache=cache).acquire_token_by_authorization_code(
             request.args['code'],
-            scopes=os.environ['SCOPE'],  # Misspelled scope would cause an HTTP 400 error here
+            scopes=os.environ.get('SCOPE'),  # Misspelled scope would cause an HTTP 400 error here
             redirect_uri=url_for("authorized", _external=True))
         if "error" in result:
             return render_template("auth_error.html", result=result)
@@ -48,16 +49,16 @@ def authorized():
 def logout():
     session.clear()  # Wipe out user and its token cache from session
     return redirect(  # Also logout from your tenant's web session
-        os.environ['AUTHORITY']+ "/oauth2/v2.0/logout" +
+        os.environ.get('AUTHORITY')+ "/oauth2/v2.0/logout" +
         "?post_logout_redirect_uri=" + url_for("index", _external=True))
 
 @app.route("/graphcall")
 def graphcall():
-    token = _get_token_from_cache(os.environ['SCOPE'])
+    token = _get_token_from_cache(os.environ.get('SCOPE'))
     if not token:
         return redirect(url_for("login"))
     graph_data = requests.get(  # Use token to call downstream service
-        os.environ['ENDPOINT'],
+        os.environ.get('ENDPOINT'),
         headers={'Authorization': 'Bearer ' + token['access_token']},
         ).json()
     return render_template('display.html', result=graph_data)
@@ -75,8 +76,8 @@ def _save_cache(cache):
 
 def _build_msal_app(cache=None, authority=None):
     return msal.ConfidentialClientApplication(
-         os.environ['CLIENT_ID'], authority=authority or os.environ['AUTHORITY'],
-        client_credential=os.environ["CLIENT_SECRET"], token_cache=cache)
+         os.environ.get('CLIENT_ID'), authority=authority or os.environ.get('AUTHORITY'),
+        client_credential=os.environ.get('CLIENT_SECRET'), token_cache=cache)
 
 def _build_auth_url(authority=None, scopes=None, state=None):
     return _build_msal_app(authority=authority).get_authorization_request_url(
